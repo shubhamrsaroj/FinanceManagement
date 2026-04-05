@@ -11,7 +11,7 @@ export const createRecord = asyncHandler(async (req, res) => {
     createdBy: req.user._id,
     // Normalize to lowercase at API level (schema also does this, belt-and-suspenders)
     ...(req.body.category && { category: req.body.category.toLowerCase().trim() }),
-    ...(req.body.type    && { type:     req.body.type.toLowerCase().trim() })
+    ...(req.body.type && { type: req.body.type.toLowerCase().trim() })
   }
 
   const duplicateCheck = await FinancialRecord.findOne({
@@ -82,8 +82,10 @@ export const getRecords = asyncHandler(async (req, res) => {
   }
 
 
-  if (type)     query.type     = type.toLowerCase();
-  if (category) query.category = category.toLowerCase();
+  // Use case-insensitive regex so both old records (e.g. "Transport") and
+  // new normalized records (e.g. "transport") are matched correctly.
+  if (type) query.type = { $regex: new RegExp(`^${type}$`, 'i') };
+  if (category) query.category = { $regex: new RegExp(`^${category}$`, 'i') };
 
   if (startDate || endDate) {
     query.date = {};

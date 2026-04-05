@@ -343,6 +343,11 @@ const options = {
             { name: 'category', in: 'query', schema: { type: 'string' }, description: 'Filter by category' },
             { name: 'startDate', in: 'query', schema: { type: 'string', format: 'date' }, description: 'Filter records from this date (YYYY-MM-DD)' },
             { name: 'endDate', in: 'query', schema: { type: 'string', format: 'date' }, description: 'Filter records up to this date (YYYY-MM-DD)' },
+            { name: 'minAmount', in: 'query', schema: { type: 'number' }, description: 'Minimum amount filter' },
+            { name: 'maxAmount', in: 'query', schema: { type: 'number' }, description: 'Maximum amount filter' },
+            { name: 'search', in: 'query', schema: { type: 'string' }, description: 'Search in description, category, or tags' },
+            { name: 'sortBy', in: 'query', schema: { type: 'string', enum: ['date', 'amount', 'createdAt'], default: 'date' }, description: 'Field to sort by' },
+            { name: 'sortOrder', in: 'query', schema: { type: 'string', enum: ['asc', 'desc'], default: 'desc' }, description: 'Sort direction' },
             { name: 'page', in: 'query', schema: { type: 'integer', default: 1 }, description: 'Page number' },
             { name: 'limit', in: 'query', schema: { type: 'integer', default: 10 }, description: 'Records per page' }
           ],
@@ -496,8 +501,13 @@ const options = {
         get: {
           tags: ['Analytics'],
           summary: 'Get dashboard summary (all authenticated users)',
-          description: 'Returns totals for income, expenses, net balance, recent transactions, and category-wise breakdown.',
+          description: 'Returns totals for income, expenses, net balance, recent transactions, category breakdown, and monthly trends. Admin can pass ?userId= to drill into a specific user.',
           security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: 'startDate', in: 'query', schema: { type: 'string', format: 'date' }, description: 'Period start date (defaults to start of current month)' },
+            { name: 'endDate', in: 'query', schema: { type: 'string', format: 'date' }, description: 'Period end date (defaults to end of current month)' },
+            { name: 'userId', in: 'query', schema: { type: 'string' }, description: 'Admin only: filter dashboard to a specific user' }
+          ],
           responses: {
             200: {
               description: 'Dashboard summary data',
@@ -510,11 +520,51 @@ const options = {
                       data: {
                         type: 'object',
                         properties: {
-                          totalIncome: { type: 'number', example: 7000 },
-                          totalExpenses: { type: 'number', example: 1500 },
-                          netBalance: { type: 'number', example: 5500 },
+                          summary: {
+                            type: 'object',
+                            properties: {
+                              totalIncome: { type: 'number', example: 7000 },
+                              totalExpenses: { type: 'number', example: 1500 },
+                              netBalance: { type: 'number', example: 5500 },
+                              savingsRate: { type: 'string', example: '78.57' },
+                              transactionCount: {
+                                type: 'object',
+                                properties: {
+                                  income: { type: 'integer', example: 3 },
+                                  expense: { type: 'integer', example: 5 },
+                                  total: { type: 'integer', example: 8 }
+                                }
+                              }
+                            }
+                          },
+                          categoryBreakdown: {
+                            type: 'object',
+                            properties: {
+                              income: { type: 'array', items: { type: 'object', properties: { category: { type: 'string' }, total: { type: 'number' }, count: { type: 'integer' } } } },
+                              expense: { type: 'array', items: { type: 'object', properties: { category: { type: 'string' }, total: { type: 'number' }, count: { type: 'integer' } } } }
+                            }
+                          },
                           recentTransactions: { type: 'array', items: { $ref: '#/components/schemas/FinancialRecord' } },
-                          categoryTotals: { type: 'object', additionalProperties: { type: 'number' } }
+                          monthlyTrends: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                month: { type: 'string', example: '2026-04' },
+                                income: { type: 'number' },
+                                expense: { type: 'number' },
+                                net: { type: 'number' },
+                                savingsRate: { type: 'string' }
+                              }
+                            }
+                          },
+                          period: {
+                            type: 'object',
+                            properties: {
+                              start: { type: 'string', format: 'date-time' },
+                              end: { type: 'string', format: 'date-time' }
+                            }
+                          }
                         }
                       }
                     }
@@ -530,8 +580,11 @@ const options = {
         get: {
           tags: ['Analytics'],
           summary: 'Get spending insights (analyst & admin only)',
-          description: 'Returns detailed spending breakdown and trends. Requires analyst or admin role.',
+          description: 'Returns top expense categories, per-transaction/day/week/month averages, and unusual transactions over the last 90 days. Requires analyst or admin role. Admin can pass ?userId= to filter.',
           security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: 'userId', in: 'query', schema: { type: 'string' }, description: 'Admin only: filter insights to a specific user' }
+          ],
           responses: {
             200: {
               description: 'Spending insights data',
@@ -541,7 +594,45 @@ const options = {
                     type: 'object',
                     properties: {
                       success: { type: 'boolean', example: true },
-                      data: { type: 'object' }
+                      data: {
+                        type: 'object',
+                        properties: {
+                          topCategories: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                category: { type: 'string', example: 'Shopping' },
+                                amount: { type: 'number', example: 4500 },
+                                percentage: { type: 'string', example: '56.46' }
+                              }
+                            }
+                          },
+                          averages: {
+                            type: 'object',
+                            properties: {
+                              perTransaction: { type: 'string', example: '1594.00' },
+                              perDay: { type: 'string', example: '88.56' },
+                              perWeek: { type: 'string', example: '619.89' },
+                              perMonth: { type: 'string', example: '2656.67' }
+                            }
+                          },
+                          unusualTransactions: {
+                            type: 'array',
+                            items: {
+                              type: 'object',
+                              properties: {
+                                id: { type: 'string' },
+                                amount: { type: 'number' },
+                                category: { type: 'string' },
+                                date: { type: 'string', format: 'date-time' },
+                                description: { type: 'string' }
+                              }
+                            }
+                          },
+                          totalTransactionsAnalyzed: { type: 'integer', example: 5 }
+                        }
+                      }
                     }
                   }
                 }
@@ -556,8 +647,11 @@ const options = {
         get: {
           tags: ['Analytics'],
           summary: 'Get comparative analysis (analyst & admin only)',
-          description: 'Returns monthly/weekly comparative trends. Requires analyst or admin role.',
+          description: 'Compares current month vs previous month for income, expenses, and savings with percentage change indicators. Requires analyst or admin role. Admin can pass ?userId= to filter.',
           security: [{ bearerAuth: [] }],
+          parameters: [
+            { name: 'userId', in: 'query', schema: { type: 'string' }, description: 'Admin only: filter comparison to a specific user' }
+          ],
           responses: {
             200: {
               description: 'Comparative analysis data',
@@ -567,7 +661,37 @@ const options = {
                     type: 'object',
                     properties: {
                       success: { type: 'boolean', example: true },
-                      data: { type: 'object' }
+                      data: {
+                        type: 'object',
+                        properties: {
+                          currentMonth: {
+                            type: 'object',
+                            properties: {
+                              period: { type: 'object', properties: { start: { type: 'string', format: 'date-time' }, end: { type: 'string', format: 'date-time' } } },
+                              income: { type: 'number' },
+                              expenses: { type: 'number' },
+                              savings: { type: 'number' }
+                            }
+                          },
+                          previousMonth: {
+                            type: 'object',
+                            properties: {
+                              period: { type: 'object', properties: { start: { type: 'string', format: 'date-time' }, end: { type: 'string', format: 'date-time' } } },
+                              income: { type: 'number' },
+                              expenses: { type: 'number' },
+                              savings: { type: 'number' }
+                            }
+                          },
+                          changes: {
+                            type: 'object',
+                            properties: {
+                              income: { type: 'object', properties: { value: { type: 'string' }, direction: { type: 'string', enum: ['up', 'down', 'same'] } } },
+                              expenses: { type: 'object', properties: { value: { type: 'string' }, direction: { type: 'string', enum: ['up', 'down', 'same'] } } },
+                              savings: { type: 'object', properties: { value: { type: 'string' }, direction: { type: 'string', enum: ['up', 'down', 'same'] } } }
+                            }
+                          }
+                        }
+                      }
                     }
                   }
                 }
