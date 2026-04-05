@@ -17,6 +17,7 @@ const financialRecordSchema = new mongoose.Schema({
   type: {
     type: String,
     enum: Object.values(RECORD_TYPES),
+    lowercase: true,
     required: [true, 'Type is required'],
     index: true
   },
@@ -24,6 +25,7 @@ const financialRecordSchema = new mongoose.Schema({
     type: String,
     required: [true, 'Category is required'],
     trim: true,
+    lowercase: true,
     index: true
   },
   date: {

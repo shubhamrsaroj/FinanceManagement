@@ -6,11 +6,12 @@ import { createError, asyncHandler } from "../middleware/errorHandler.js";
 export const createRecord = asyncHandler(async (req, res) => {
 
   const recordData = {
-
     ...req.body,
     user: req.user._id,
-    createdBy: req.user._id
-
+    createdBy: req.user._id,
+    // Normalize to lowercase at API level (schema also does this, belt-and-suspenders)
+    ...(req.body.category && { category: req.body.category.toLowerCase().trim() }),
+    ...(req.body.type    && { type:     req.body.type.toLowerCase().trim() })
   }
 
   const duplicateCheck = await FinancialRecord.findOne({
@@ -77,14 +78,13 @@ export const getRecords = asyncHandler(async (req, res) => {
 
   if (req.user.role !== 'admin') {
     query.user = req.user.id;
-  }
-  else if (req.query.userId) {
-    query.user = req.querry.id;
+  } else if (req.query.userId) {
+    query.user = req.query.userId;   // fixed: was req.querry.id (typo)
   }
 
 
-  if (type) query.type = type;
-  if (category) query.category = category;
+  if (type)     query.type     = type.toLowerCase();
+  if (category) query.category = category.toLowerCase();
 
   if (startDate || endDate) {
     query.date = {};
@@ -173,7 +173,12 @@ export const updateRecord = asyncHandler(async (req, res) => {
 
   allowedUpdates.forEach(field => {
     if (req.body[field] !== undefined) {
-      updates[field] = req.body[field];
+      // Normalize string fields to lowercase
+      if ((field === 'category' || field === 'type') && typeof req.body[field] === 'string') {
+        updates[field] = req.body[field].toLowerCase().trim();
+      } else {
+        updates[field] = req.body[field];
+      }
     }
   });
 

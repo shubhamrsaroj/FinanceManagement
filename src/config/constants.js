@@ -28,6 +28,6 @@ export const PERMISSIONS = {
 };
 
 export const CATEGORIES = {
-  income: ['Salary', 'Freelance', 'Investment', 'Business', 'Gift', 'Other'],
-  expense: ['Food', 'Transport', 'Entertainment', 'Bills', 'Shopping', 'Health', 'Education', 'Other']
+  income:  ['salary', 'freelance', 'investment', 'business', 'gift', 'other'],
+  expense: ['food', 'transport', 'entertainment', 'bills', 'shopping', 'health', 'education', 'other']
 };
