@@ -3,15 +3,16 @@ import FinancialRecord from '../models/FinancialRecord.js';
 import { asyncHandler } from '../middleware/errorHandler.js';
 
 // Helper function to get month summary
-const getMonthSummary = async (userId, startDate, endDate) => {
+// userId is optional — omit to get company-wide totals
+const getMonthSummary = async (startDate, endDate, userId = null) => {
+  const matchStage = {
+    isDeleted: false,
+    date: { $gte: startDate, $lte: endDate }
+  };
+  if (userId) matchStage.user = new mongoose.Types.ObjectId(userId);
+
   const result = await FinancialRecord.aggregate([
-    {
-      $match: {
-        user: new mongoose.Types.ObjectId(userId),
-        isDeleted: false,
-        date: { $gte: startDate, $lte: endDate }
-      }
-    },
+    { $match: matchStage },
     {
       $group: {
         _id: '$type',
@@ -76,14 +77,14 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
   const start = startDate ? new Date(startDate) : defaultStartDate;
   const end = endDate ? new Date(endDate) : defaultEndDate;
 
-  const userId = req.user.role === 'admin' && req.query.userId
+  // Company-wide dashboard: no user filter.
+  // Admin can optionally drill into a specific user's data via ?userId=
+  const filterUserId = req.user.role === 'admin' && req.query.userId
     ? req.query.userId
-    : req.user.id;
+    : null;
 
-  const matchStage = {
-    user: new mongoose.Types.ObjectId(userId),
-    isDeleted: false
-  };
+  const matchStage = { isDeleted: false };
+  if (filterUserId) matchStage.user = new mongoose.Types.ObjectId(filterUserId);
 
   if (startDate || endDate) {
     matchStage.date = {};
@@ -187,17 +188,22 @@ export const getDashboardSummary = asyncHandler(async (req, res) => {
 
 // Get spending insights
 export const getSpendingInsights = asyncHandler(async (req, res) => {
-  const userId = req.user.id;
+  // Company-wide insights. Admin can filter by ?userId=
+  const filterUserId = req.user.role === 'admin' && req.query.userId
+    ? req.query.userId
+    : null;
 
   const ninetyDaysAgo = new Date();
   ninetyDaysAgo.setDate(ninetyDaysAgo.getDate() - 90);
 
-  const expenses = await FinancialRecord.find({
-    user: userId,
+  const expenseQuery = {
     type: 'expense',
     isDeleted: false,
     date: { $gte: ninetyDaysAgo }
-  }).sort({ date: -1 });
+  };
+  if (filterUserId) expenseQuery.user = filterUserId;
+
+  const expenses = await FinancialRecord.find(expenseQuery).sort({ date: -1 });
 
   if (expenses.length === 0) {
     return res.status(200).json({
@@ -260,7 +266,11 @@ export const getSpendingInsights = asyncHandler(async (req, res) => {
 
 // Get comparative analysis
 export const getComparativeAnalysis = asyncHandler(async (req, res) => {
-  const userId = req.user.id;
+  // Company-wide comparison. Admin can filter by ?userId=
+  const filterUserId = req.user.role === 'admin' && req.query.userId
+    ? req.query.userId
+    : null;
+
   const now = new Date();
 
   const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
@@ -270,8 +280,8 @@ export const getComparativeAnalysis = asyncHandler(async (req, res) => {
   const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
 
   const [thisMonthData, lastMonthData] = await Promise.all([
-    getMonthSummary(userId, thisMonthStart, thisMonthEnd),
-    getMonthSummary(userId, lastMonthStart, lastMonthEnd)
+    getMonthSummary(thisMonthStart, thisMonthEnd, filterUserId),
+    getMonthSummary(lastMonthStart, lastMonthEnd, filterUserId)
   ]);
 
   const changes = {

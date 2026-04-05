@@ -73,13 +73,12 @@ export const getRecords = asyncHandler(async (req, res) => {
 
   const query = {
     isDeleted: false
-  }
+  };
 
-
-  if (req.user.role !== 'admin') {
-    query.user = req.user.id;
-  } else if (req.query.userId) {
-    query.user = req.query.userId;   // fixed: was req.querry.id (typo)
+  // Financial records are company-wide: all roles can read all records.
+  // Only admin can additionally filter by a specific userId (e.g. to audit one user's entries).
+  if (req.user.role === 'admin' && req.query.userId) {
+    query.user = req.query.userId;
   }
 
 
@@ -143,9 +142,8 @@ export const getRecord = asyncHandler(async (req, res) => {
     throw createError('Record not found', 404);
   }
 
-  if (req.user.role !== 'admin' && record.user._id.toString() !== req.user.id) {
-    throw createError('You can only view your own records', 403);
-  }
+  // All authenticated roles (viewer, analyst, admin) can read any record.
+  // Records are company-wide financial data, not user-private data.
 
   res.status(200).json({
     success: true,
